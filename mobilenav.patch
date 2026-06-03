@@ -1,0 +1,366 @@
+From 479621f4d654be92f7816068dee1d8ecaf4a167f Mon Sep 17 00:00:00 2001
+From: Claude <noreply@anthropic.com>
+Date: Wed, 3 Jun 2026 15:50:55 +0000
+Subject: [PATCH] Add mobile hamburger menu for sidebar and navigation
+
+On small screens the sidebar and inline nav are now hidden behind a
+sticky top bar with a hamburger button. Tapping it opens a slide-in
+drawer containing the profile, page navigation (Papers, CV, etc.) and
+social links. Language/theme toggles move into the top bar so they stay
+reachable. Built entirely in the shared script.js/style.css, so every
+page picks it up without per-page changes.
+---
+ script.js | 143 +++++++++++++++++++++++++++++++++++++++++----
+ style.css | 171 ++++++++++++++++++++++++++++++++++++++++++++++++++++++
+ 2 files changed, 304 insertions(+), 10 deletions(-)
+
+diff --git a/script.js b/script.js
+index c74a18a..46ec2fc 100644
+--- a/script.js
++++ b/script.js
+@@ -36,27 +36,150 @@
+     }
+   }
+ 
+-  var themeBtn = document.getElementById('themeToggle');
+-  if (themeBtn) {
+-    themeBtn.addEventListener('click', function () {
++  // Delegated handler so the toggles work both in the desktop nav and in the
++  // dynamically-built mobile bar (which has its own copies of the buttons).
++  document.addEventListener('click', function (e) {
++    var t = e.target.closest('[data-act]');
++    if (!t) return;
++    var act = t.getAttribute('data-act');
++    if (act === 'theme') {
+       setTheme(effectiveTheme() === 'dark' ? 'light' : 'dark');
+-    });
+-  }
++    } else if (act === 'lang') {
++      setLang(root.getAttribute('data-lang') === 'ja' ? 'en' : 'ja');
++    }
++  });
+ 
++  // Tag the existing desktop nav buttons so the delegated handler picks them up.
++  var themeBtn = document.getElementById('themeToggle');
++  if (themeBtn) themeBtn.setAttribute('data-act', 'theme');
+   var langBtn = document.getElementById('langToggle');
+-  if (langBtn) {
+-    langBtn.addEventListener('click', function () {
+-      setLang(root.getAttribute('data-lang') === 'ja' ? 'en' : 'ja');
+-    });
+-  }
++  if (langBtn) langBtn.setAttribute('data-act', 'lang');
+ 
+   // Keep the icon in sync if the OS theme changes while in "auto" mode.
+   mql.addEventListener('change', function () {
+     if (root.getAttribute('data-theme') === 'auto') updateThemeIcon();
+   });
+ 
++  buildMobileNav();
+   updateThemeIcon();
+ 
++  // ----------------------------------------------------------------
++  // Mobile navigation: a sticky top bar + slide-in drawer that holds
++  // the sidebar profile and the page navigation. Built here so every
++  // page picks it up from this single shared script (styles in style.css).
++  // ----------------------------------------------------------------
++  function buildMobileNav() {
++    if (document.querySelector('.mobile-bar')) return;
++
++    var sidebar = document.querySelector('.sidebar');
++    var navLinks = document.querySelectorAll('.main > .nav a');
++
++    // --- Sticky top bar (brand + language/theme toggles + hamburger) ---
++    var bar = document.createElement('header');
++    bar.className = 'mobile-bar';
++    bar.innerHTML =
++      '<a class="mobile-brand" href="index.html">' +
++        '<span data-lang="en">Naruki Sonobe</span>' +
++        '<span data-lang="ja">薗部 成輝</span>' +
++      '</a>';
++
++    var actions = document.createElement('div');
++    actions.className = 'mobile-actions';
++    actions.innerHTML =
++      '<button class="ctrl-btn" data-act="lang" type="button" aria-label="Switch language / 言語切替">' +
++        '<span data-lang="en">日本語</span><span data-lang="ja">EN</span>' +
++      '</button>' +
++      '<button class="ctrl-btn" data-act="theme" type="button" aria-label="Toggle dark mode / テーマ切替">' +
++        '<i class="fa-solid fa-moon" data-theme-icon aria-hidden="true"></i>' +
++      '</button>';
++
++    var burger = document.createElement('button');
++    burger.className = 'hamburger';
++    burger.type = 'button';
++    burger.setAttribute('aria-label', 'Open menu / メニュー');
++    burger.setAttribute('aria-expanded', 'false');
++    burger.innerHTML = '<span></span><span></span><span></span>';
++    actions.appendChild(burger);
++    bar.appendChild(actions);
++
++    // --- Overlay + drawer ---
++    var overlay = document.createElement('div');
++    overlay.className = 'drawer-overlay';
++
++    var drawer = document.createElement('nav');
++    drawer.className = 'mobile-drawer';
++    drawer.setAttribute('aria-label', 'Site navigation');
++
++    var close = document.createElement('button');
++    close.className = 'drawer-close';
++    close.type = 'button';
++    close.setAttribute('aria-label', 'Close menu / 閉じる');
++    close.innerHTML = '<i class="fa-solid fa-xmark" aria-hidden="true"></i>';
++    drawer.appendChild(close);
++
++    // Profile (cloned from the sidebar).
++    if (sidebar) {
++      ['.profile-photo', 'h1', '.name-jp', '.meta-list'].forEach(function (sel) {
++        var el = sidebar.querySelector(sel);
++        if (el) drawer.appendChild(el.cloneNode(true));
++      });
++    }
++
++    // Page navigation links.
++    if (navLinks.length) {
++      drawer.appendChild(makeDivider());
++      var ul = document.createElement('ul');
++      ul.className = 'drawer-links';
++      navLinks.forEach(function (a) {
++        var li = document.createElement('li');
++        li.appendChild(a.cloneNode(true));
++        ul.appendChild(li);
++      });
++      drawer.appendChild(ul);
++    }
++
++    // Social / contact links (cloned from the sidebar).
++    var social = sidebar && sidebar.querySelector('.social-list');
++    if (social) {
++      drawer.appendChild(makeDivider());
++      drawer.appendChild(social.cloneNode(true));
++    }
++
++    document.body.insertBefore(bar, document.body.firstChild);
++    document.body.appendChild(overlay);
++    document.body.appendChild(drawer);
++
++    // --- Open / close wiring ---
++    function open() {
++      document.body.classList.add('drawer-open');
++      burger.setAttribute('aria-expanded', 'true');
++    }
++    function shut() {
++      document.body.classList.remove('drawer-open');
++      burger.setAttribute('aria-expanded', 'false');
++    }
++    burger.addEventListener('click', function () {
++      document.body.classList.contains('drawer-open') ? shut() : open();
++    });
++    close.addEventListener('click', shut);
++    overlay.addEventListener('click', shut);
++    drawer.addEventListener('click', function (e) {
++      if (e.target.closest('a')) shut();
++    });
++    document.addEventListener('keydown', function (e) {
++      if (e.key === 'Escape') shut();
++    });
++    window.addEventListener('resize', function () {
++      if (window.innerWidth > 768) shut();
++    });
++
++    function makeDivider() {
++      var hr = document.createElement('hr');
++      hr.className = 'divider';
++      return hr;
++    }
++  }
++
+   // Fill the footer "last updated" date.
+   // Site-wide single date = the repository's latest commit (updates on every push,
+   // identical across all pages). Falls back to this page's file date if the API
+diff --git a/style.css b/style.css
+index f2fd582..c0c9835 100644
+--- a/style.css
++++ b/style.css
+@@ -381,6 +381,177 @@ a:hover { color: var(--accent-hover); border-bottom-color: var(--accent-soft); }
+   .page-title { font-size: 1.9rem; }
+ }
+ 
++/* ============================================================
++   Mobile navigation — top bar + slide-in drawer
++   Built dynamically in script.js; hidden on desktop.
++   ============================================================ */
++.mobile-bar,
++.drawer-overlay,
++.mobile-drawer { display: none; }
++
++@media (max-width: 768px) {
++  /* Hide the desktop sidebar + inline nav; everything moves into the drawer. */
++  .layout > .sidebar { display: none; }
++  .main > .nav { display: none; }
++
++  .layout {
++    grid-template-columns: 1fr;
++    gap: 0;
++    max-width: 100%;
++    padding: 1.25rem 1.25rem 3rem;
++  }
++  .main { margin-bottom: 0; }
++
++  /* --- Sticky top bar --- */
++  .mobile-bar {
++    display: flex;
++    align-items: center;
++    justify-content: space-between;
++    gap: 0.5rem;
++    position: sticky;
++    top: 0;
++    z-index: 50;
++    padding: 0.7rem 1.25rem;
++    background: var(--bg);
++    border-bottom: 1px solid var(--line);
++  }
++  .mobile-brand {
++    font-family: var(--serif);
++    font-weight: 600;
++    font-size: 1.05rem;
++    letter-spacing: -0.01em;
++    color: var(--text);
++    border-bottom: none;
++  }
++  .mobile-brand:hover { color: var(--text); border-bottom: none; }
++  .mobile-actions {
++    display: flex;
++    align-items: center;
++    gap: 0.4rem;
++  }
++
++  /* --- Hamburger button --- */
++  .hamburger {
++    width: 2.1rem;
++    height: 1.95rem;
++    display: inline-flex;
++    flex-direction: column;
++    justify-content: center;
++    align-items: center;
++    gap: 5px;
++    background: transparent;
++    border: 1px solid var(--line);
++    border-radius: 6px;
++    cursor: pointer;
++    padding: 0;
++  }
++  .hamburger:focus-visible { outline: 2px solid var(--accent-soft); outline-offset: 2px; }
++  .hamburger span {
++    display: block;
++    width: 18px;
++    height: 2px;
++    background: var(--text-soft);
++    border-radius: 2px;
++    transition: transform 0.25s ease, opacity 0.2s ease;
++  }
++  body.drawer-open .hamburger span:nth-child(1) { transform: translateY(7px) rotate(45deg); }
++  body.drawer-open .hamburger span:nth-child(2) { opacity: 0; }
++  body.drawer-open .hamburger span:nth-child(3) { transform: translateY(-7px) rotate(-45deg); }
++
++  /* --- Overlay --- */
++  .drawer-overlay {
++    display: block;
++    position: fixed;
++    inset: 0;
++    z-index: 60;
++    background: rgba(10, 15, 25, 0.45);
++    opacity: 0;
++    visibility: hidden;
++    transition: opacity 0.25s ease, visibility 0.25s ease;
++  }
++  body.drawer-open .drawer-overlay { opacity: 1; visibility: visible; }
++
++  /* --- Drawer panel --- */
++  .mobile-drawer {
++    display: block;
++    position: fixed;
++    top: 0;
++    right: 0;
++    z-index: 70;
++    width: min(84vw, 320px);
++    height: 100%;
++    background: var(--surface);
++    border-left: 1px solid var(--line);
++    box-shadow: -8px 0 30px rgba(0, 0, 0, 0.15);
++    padding: 1.5rem 1.5rem 2.5rem;
++    overflow-y: auto;
++    transform: translateX(100%);
++    transition: transform 0.3s cubic-bezier(0.2, 0.7, 0.2, 1);
++  }
++  body.drawer-open .mobile-drawer { transform: translateX(0); }
++  body.drawer-open { overflow: hidden; }
++
++  .drawer-close {
++    position: absolute;
++    top: 0.9rem;
++    right: 0.9rem;
++    width: 2rem;
++    height: 2rem;
++    display: inline-flex;
++    align-items: center;
++    justify-content: center;
++    background: transparent;
++    border: none;
++    border-radius: 6px;
++    color: var(--text-muted);
++    font-size: 1.1rem;
++    cursor: pointer;
++  }
++  .drawer-close:hover { color: var(--accent); }
++  .drawer-close:focus-visible { outline: 2px solid var(--accent-soft); outline-offset: 2px; }
++
++  /* Drawer profile (cloned from the sidebar) */
++  .mobile-drawer .profile-photo { width: 84px; height: 84px; margin-bottom: 1rem; }
++  .mobile-drawer h1 {
++    font-family: var(--serif);
++    font-weight: 500;
++    font-size: 1.35rem;
++    line-height: 1.15;
++    margin: 0 0 0.2rem 0;
++    color: var(--text);
++  }
++  .mobile-drawer .name-jp {
++    font-family: var(--serif);
++    font-style: italic;
++    font-size: 0.98rem;
++    color: var(--text-muted);
++    margin: 0 0 1rem 0;
++  }
++  .mobile-drawer .meta-list { margin-bottom: 0; }
++  .mobile-drawer .divider { margin: 1.25rem 0; }
++
++  /* Drawer nav links */
++  .drawer-links {
++    list-style: none;
++    padding: 0;
++    margin: 0;
++  }
++  .drawer-links li { border-bottom: 1px solid var(--line-soft); }
++  .drawer-links li:last-child { border-bottom: none; }
++  .drawer-links a {
++    display: block;
++    padding: 0.8rem 0;
++    font-size: 0.8rem;
++    letter-spacing: 0.16em;
++    text-transform: uppercase;
++    font-weight: 500;
++    color: var(--text-soft);
++    border-bottom: none;
++  }
++  .drawer-links a:hover { color: var(--accent); border-bottom: none; }
++  .drawer-links a.active { color: var(--accent); }
++}
++
+ /* ---------- Subtle entrance ---------- */
+ @media (prefers-reduced-motion: no-preference) {
+   .main > * {
+-- 
+2.43.0
+
