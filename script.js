@@ -56,4 +56,45 @@
   });
 
   updateThemeIcon();
+
+  // Fill the footer "last updated" date.
+  // Site-wide single date = the repository's latest commit (updates on every push,
+  // identical across all pages). Falls back to this page's file date if the API
+  // is unavailable (offline, rate-limited, or opened locally via file://).
+  (function setLastUpdated() {
+    var footer = document.querySelector('.footer');
+    if (!footer) return;
+
+    var months = ['January', 'February', 'March', 'April', 'May', 'June',
+                  'July', 'August', 'September', 'October', 'November', 'December'];
+
+    function render(d) {
+      if (isNaN(d.getTime())) return;
+      var en = 'Last updated: ' + months[d.getMonth()] + ' ' + d.getFullYear();
+      var ja = '最終更新：' + d.getFullYear() + '年' + (d.getMonth() + 1) + '月';
+      var spanEn = document.createElement('span');
+      spanEn.setAttribute('data-lang', 'en');
+      spanEn.textContent = en;
+      var spanJa = document.createElement('span');
+      spanJa.setAttribute('data-lang', 'ja');
+      spanJa.textContent = ja;
+      footer.innerHTML = '';
+      footer.appendChild(spanEn);
+      footer.appendChild(spanJa);
+    }
+
+    // Show the per-page file date immediately so something always appears.
+    render(new Date(document.lastModified));
+
+    // Then override with the repo-wide latest commit date.
+    var REPO = 'naruki-sonobe/naruki-sonobe.github.io';
+    fetch('https://api.github.com/repos/' + REPO + '/commits?per_page=1')
+      .then(function (r) { return r.ok ? r.json() : null; })
+      .then(function (data) {
+        if (data && data[0] && data[0].commit && data[0].commit.committer) {
+          render(new Date(data[0].commit.committer.date));
+        }
+      })
+      .catch(function () { /* keep the fallback date */ });
+  })();
 })();
